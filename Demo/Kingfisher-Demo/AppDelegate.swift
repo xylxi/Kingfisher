@@ -32,31 +32,117 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
-
+    let queueA: dispatch_queue_t = dispatch_queue_create("com.xylxi.Kingfisher.test", DISPATCH_QUEUE_SERIAL)
+    let queueB:  dispatch_queue_t = dispatch_queue_create("com.xylxi.Kingfisher.test", DISPATCH_QUEUE_CONCURRENT)
+    
+    
     func application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool {
         // Override point for customization after application launch.
+        
+        self.test_dispatch_barrier_async()
+        
         return true
     }
-
-    func applicationWillResignActive(application: UIApplication) {
-        // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-        // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
+    
+    /**
+     GCD的学习记录
+     关于同步和异步新理解 2016-04-29
+     dispatch_sync和dispatch_async本身就是一个函数
+     当执行到dispatch_sync函数的时候，只用处理完dispatch_sync函数中的block，dispatch_sync函数才能return返回，，才能继续往下
+     dispatch_async则不需要处理完dispatch_async函数中的block，就能return
+     */
+    
+    /**
+    *  首先main 队列执行test1任务
+    *  打印了 current thread 1
+    *  碰到了dispatch_sync(dispatch_get_global_queue(0, 0), ^{block});
+    *  block加入了global队列，因为是同步任务，所以需要等到block执行完，才能返回，所以进程将在主线程挂起直到该 Block 完成
+    *  global队列按照FIFO，调度队列中的任务
+    *  当调度了block，打印了current thread 3，block完成后，返回
+    *  返回后，继续主队的任务
+    *  打印current thread 2
+    */
+    func test1() {
+        print("current thread 1 = \(NSThread.currentThread())")
+        dispatch_sync(dispatch_get_global_queue(0, 0)) { () -> Void in
+            print("current thread 3 = \(NSThread.currentThread())")
+        }
+        print("current thread 2 = \(NSThread.currentThread())")
     }
 
-    func applicationDidEnterBackground(application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+    /**
+     *  首先main 队列执行test2任务
+     *  打印了 current thread 1
+     *  碰到了dispatch_async(dispatch_get_global_queue(0, 0), ^{block});
+     *  dispathch_async中的block加入global队列中，立即返回
+     *  继续test2中的任务，打印current thread 2
+     *  记住 Block 在全局队列中将按照 FIFO 顺序出列，但可以并发执行。
+     *  添加到 dispatch_async 的代码块开始执行。
+     *
+     *  打印current thread 2和current thread 3，不一定谁在前，谁在后
+     */
+    func test2() {
+        print("current thread 1 = \(NSThread.currentThread())")
+        dispatch_async(dispatch_get_global_queue(0, 0)) { () -> Void in
+            print("current thread 3 = \(NSThread.currentThread())")
+        }
+        print("current thread 2 = \(NSThread.currentThread())")
     }
-
-    func applicationWillEnterForeground(application: UIApplication) {
-        // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
+    
+    /**
+    *  group中notify和wait的区别
+    */
+    func test3() {
+        let queue = dispatch_get_global_queue(0, 0)
+        let group = dispatch_group_create()
+        
+        print("begin group")
+        for i in 0..<10 {
+            dispatch_group_async(group, queue, { () -> Void in
+                print("do \(i) at group")
+            })
+        }
+        
+        // 等group中的block都执行完后，调用这个，不阻塞当前线程
+        dispatch_group_notify(group, queue) { () -> Void in
+            print("all done at group")
+        }
+        //当前线程卡到这里，知道group中的block执行完，才往下走
+        //    dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER)
+        
+        print("after group")
     }
-
-    func applicationDidBecomeActive(application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-    }
-
-    func applicationWillTerminate(application: UIApplication) {
-        // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
+    
+    /**
+    *   dispatch_barrier_async处理多线程修改一个数据的问题
+    *   dispatch_barrier_xxxx 函数，在将block派送到指定的queue中
+    *   dispatch_barrier_xxxx中的block，等待前面的任务完成后，才能派送
+    *   在执行dispatch_barrier_xxxx中的block期间，queue不能在派送新的任务
+    */
+    func test_dispatch_barrier_async() {
+        dispatch_async(queueB) { () -> Void in
+//            print(2)
+        }
+        dispatch_async(queueB) { () -> Void in
+//            print(3)
+        }
+        dispatch_async(queueB) { () -> Void in
+//            print(4)
+        }
+        dispatch_barrier_async(queueB) { () -> Void in
+            for _ in 0..<100 {
+//                print("<<<\(i)")
+            }
+        }
+        dispatch_async(queueB) { () -> Void in
+//            print(5)
+        }
+        dispatch_async(queueB) { () -> Void in
+//            print(6)
+        }
+        dispatch_async(queueB) { () -> Void in
+//            print(7)
+        }
     }
 }

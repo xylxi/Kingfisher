@@ -25,9 +25,9 @@
 //  THE SOFTWARE.
 
 #if os(OSX)
-import AppKit
+    import AppKit
 #else
-import UIKit
+    import UIKit
 #endif
 
 /// Progress update block of downloader.
@@ -37,12 +37,17 @@ public typealias ImageDownloaderProgressBlock = DownloadProgressBlock
 public typealias ImageDownloaderCompletionHandler = ((image: Image?, error: NSError?, imageURL: NSURL?, originalData: NSData?) -> ())
 
 /// Download task.
+/* 包含
+1、weak的下载类
+2、请求URL
+3、NSURLSessionDataTask(取消最终是调用改task的cancle方法，结束网络任务)
+*/
 public struct RetrieveImageDownloadTask {
     let internalTask: NSURLSessionDataTask
     
     /// Downloader by which this task is intialized.
     public private(set) weak var ownerDownloader: ImageDownloader?
-
+    
     /**
      Cancel this download task. It will trigger the completion handler with an NSURLErrorCancelled error.
      */
@@ -55,7 +60,7 @@ public struct RetrieveImageDownloadTask {
         return internalTask.originalRequest?.URL
     }
     
-    /// The relative priority of this download task. 
+    /// The relative priority of this download task.
     /// It represents the `priority` property of the internal `NSURLSessionTask` of this download task.
     /// The value for it is between 0.0~1.0. Default priority is value of 0.5.
     /// See documentation on `priority` of `NSURLSessionTask` for more about it.
@@ -76,12 +81,12 @@ private let instance = ImageDownloader(name: defaultDownloaderName)
 
 
 /**
-The error code.
-
-- BadData: The downloaded data is not an image or the data is corrupted.
-- NotModified: The remote server responsed a 304 code. No image data downloaded.
-- InvalidURL: The URL is invalid.
-*/
+ The error code.
+ 
+ - BadData: The downloaded data is not an image or the data is corrupted.
+ - NotModified: The remote server responsed a 304 code. No image data downloaded.
+ - InvalidURL: The URL is invalid.
+ */
 public enum KingfisherError: Int {
     case BadData = 10000
     case NotModified = 10001
@@ -89,19 +94,21 @@ public enum KingfisherError: Int {
 }
 
 /// Protocol of `ImageDownloader`.
+///  该协议定义了ImageDownloader下载完成后的回调
 @objc public protocol ImageDownloaderDelegate {
     /**
-    Called when the `ImageDownloader` object successfully downloaded an image from specified URL.
-    
-    - parameter downloader: The `ImageDownloader` object finishes the downloading.
-    - parameter image:      Downloaded image.
-    - parameter URL:        URL of the original request URL.
-    - parameter response:   The response object of the downloading process.
-    */
+     Called when the `ImageDownloader` object successfully downloaded an image from specified URL.
+     
+     - parameter downloader: The `ImageDownloader` object finishes the downloading.
+     - parameter image:      Downloaded image.
+     - parameter URL:        URL of the original request URL.
+     - parameter response:   The response object of the downloading process.
+     */
     optional func imageDownloader(downloader: ImageDownloader, didDownloadImage image: Image, forURL URL: NSURL, withResponse response: NSURLResponse)
 }
 
 /// Protocol indicates that an authentication challenge could be handled.
+///  认证信息改变的协议
 public protocol AuthenticationChallengeResponable: class {
     /**
      Called when an session level authentication challenge is received.
@@ -119,7 +126,7 @@ public protocol AuthenticationChallengeResponable: class {
 extension AuthenticationChallengeResponable {
     
     func downloder(downloader: ImageDownloader, didReceiveChallenge challenge: NSURLAuthenticationChallenge, completionHandler: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Void) {
-    
+        
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
             if let trustedHosts = downloader.trustedHosts where trustedHosts.contains(challenge.protectionSpace.host) {
                 let credential = NSURLCredential(forTrust: challenge.protectionSpace.serverTrust!)
@@ -135,12 +142,15 @@ extension AuthenticationChallengeResponable {
 /// `ImageDownloader` represents a downloading manager for requesting the image with a URL from server.
 public class ImageDownloader: NSObject {
     
+    // 内部类
     class ImageFetchLoad {
+        // 下载进度回调，下载完成回调的元组的数组
         var callbacks = [CallbackPair]()
+        // 响应数据
         var responseData = NSMutableData()
-
+        // 包含下载后的操作
         var options: KingfisherOptionsInfo?
-        
+        // 记录同一个URL，有多少个ImageView在请求下载
         var downloadTaskCount = 0
         var downloadTask: RetrieveImageDownloadTask?
     }
@@ -148,7 +158,7 @@ public class ImageDownloader: NSObject {
     // MARK: - Public property
     /// This closure will be applied to the image download request before it being sent. You can modify the request for some customizing purpose, like adding auth token to the header or do a url mapping.
     public var requestModifier: (NSMutableURLRequest -> Void)?
-
+    
     /// The duration before the download is timeout. Default is 15 seconds.
     public var downloadTimeout: NSTimeInterval = 15.0
     
@@ -165,18 +175,23 @@ public class ImageDownloader: NSObject {
     /// Whether the download requests should use pipeling or not. Default is false.
     public var requestsUsePipeling = false
     
+    // 这里强引用了sessionHandler，在sessionHandler中，也强引用了ImageDownloader
+    // 循环引用
     private let sessionHandler: ImageDownloaderSessionHandler
     private var session: NSURLSession?
     
     /// Delegate of this `ImageDownloader` object. See `ImageDownloaderDelegate` protocol for more.
+    ///  这个代理什么时候设置
     public weak var delegate: ImageDownloaderDelegate?
     
-    /// A responder for authentication challenge. 
+    /// A responder for authentication challenge.
     /// Downloader will forward the received authentication challenge for the downloading session to this responder.
     public weak var authenticationChallengeResponder: AuthenticationChallengeResponable?
     
     // MARK: - Internal property
+    // 在多线程中，保证fetchLoads的写操作
     let barrierQueue: dispatch_queue_t
+    // 开启多线程去处理后台解码队列
     let processQueue: dispatch_queue_t
     
     typealias CallbackPair = (progressBlock: ImageDownloaderProgressBlock?, completionHander: ImageDownloaderCompletionHandler?)
@@ -190,12 +205,12 @@ public class ImageDownloader: NSObject {
     }
     
     /**
-    Init a downloader with name.
-    
-    - parameter name: The name for the downloader. It should not be empty.
-    
-    - returns: The downloader object.
-    */
+     Init a downloader with name.
+     
+     - parameter name: The name for the downloader. It should not be empty.
+     
+     - returns: The downloader object.
+     */
     public init(name: String) {
         if name.isEmpty {
             fatalError("[Kingfisher] You should specify a name for the downloader. A downloader with empty name is not permitted.")
@@ -216,8 +231,16 @@ public class ImageDownloader: NSObject {
     
     func fetchLoadForKey(key: NSURL) -> ImageFetchLoad? {
         var fetchLoad: ImageFetchLoad?
+        // 在多线程中获取指定key对应的ImageFetchLoad
+        
+        // 因为多线程的读写问题，所以要保证读写按钮
+        // 因此在并行队列中使用同步任务，保证在barrierQueue中，到这一步的时候
+        // 进程将在该线程挂起，同时barrierQueue队列按照FIFO，调度barrierQueue的任务，当这个同步block结束后，该线程恢复，继续下面操作
+//        print("before->\(NSThread.currentThread())")
         dispatch_sync(barrierQueue, { () -> Void in
             fetchLoad = self.fetchLoads[key]
+//            print("after->\(NSThread.currentThread())")
+            
         })
         return fetchLoad
     }
@@ -226,59 +249,63 @@ public class ImageDownloader: NSObject {
 // MARK: - Download method
 extension ImageDownloader {
     /**
-    Download an image with a URL.
-    
-    - parameter URL:               Target URL.
-    - parameter progressBlock:     Called when the download progress updated.
-    - parameter completionHandler: Called when the download progress finishes.
-    
-    - returns: A downloading task. You could call `cancel` on it to stop the downloading process.
-    */
+     Download an image with a URL.
+     
+     - parameter URL:               Target URL.
+     - parameter progressBlock:     Called when the download progress updated.
+     - parameter completionHandler: Called when the download progress finishes.
+     
+     - returns: A downloading task. You could call `cancel` on it to stop the downloading process.
+     */
     public func downloadImageWithURL(URL: NSURL,
-                           progressBlock: ImageDownloaderProgressBlock?,
-                       completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
+        progressBlock: ImageDownloaderProgressBlock?,
+        completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
     {
         return downloadImageWithURL(URL, options: nil, progressBlock: progressBlock, completionHandler: completionHandler)
     }
     
     /**
-    Download an image with a URL and option.
-    
-    - parameter URL:               Target URL.
-    - parameter options:           The options could control download behavior. See `KingfisherOptionsInfo`.
-    - parameter progressBlock:     Called when the download progress updated.
-    - parameter completionHandler: Called when the download progress finishes.
-
-    - returns: A downloading task. You could call `cancel` on it to stop the downloading process.
-    */
+     Download an image with a URL and option.
+     
+     - parameter URL:               Target URL.
+     - parameter options:           The options could control download behavior. See `KingfisherOptionsInfo`.
+     - parameter progressBlock:     Called when the download progress updated.
+     - parameter completionHandler: Called when the download progress finishes.
+     
+     - returns: A downloading task. You could call `cancel` on it to stop the downloading process.
+     */
     public func downloadImageWithURL(URL: NSURL,
-                                 options: KingfisherOptionsInfo?,
-                           progressBlock: ImageDownloaderProgressBlock?,
-                       completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
+        options: KingfisherOptionsInfo?,
+        progressBlock: ImageDownloaderProgressBlock?,
+        completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
     {
         return downloadImageWithURL(URL,
             retrieveImageTask: nil,
-                      options: options,
-                progressBlock: progressBlock,
+            options: options,
+            progressBlock: progressBlock,
             completionHandler: completionHandler)
     }
     
+    /** 下载图片 */
     internal func downloadImageWithURL(URL: NSURL,
-                       retrieveImageTask: RetrieveImageTask?,
-                                 options: KingfisherOptionsInfo?,
-                           progressBlock: ImageDownloaderProgressBlock?,
-                       completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
+        retrieveImageTask: RetrieveImageTask?,
+        options: KingfisherOptionsInfo?,
+        progressBlock: ImageDownloaderProgressBlock?,
+        completionHandler: ImageDownloaderCompletionHandler?) -> RetrieveImageDownloadTask?
     {
+        //  先判断检索图片是否被取消了，如果取消就返回nil
         if let retrieveImageTask = retrieveImageTask where retrieveImageTask.cancelledBeforeDownlodStarting {
             return nil
         }
-        
+        //  默认超时时常为15秒
         let timeout = self.downloadTimeout == 0.0 ? 15.0 : self.downloadTimeout
         
         // We need to set the URL as the load key. So before setup progress, we need to ask the `requestModifier` for a final URL.
+        // 用于创建一个网络请求对象，cachePolicy策略为忽略缓存
         let request = NSMutableURLRequest(URL: URL, cachePolicy: .ReloadIgnoringLocalCacheData, timeoutInterval: timeout)
         request.HTTPShouldUsePipelining = requestsUsePipeling
         
+        /** 这里可能修改了requeset设置，所以下面需要判断 */
         self.requestModifier?(request)
         
         // There is a possiblility that request modifier changed the url to `nil` or empty.
@@ -288,17 +315,26 @@ extension ImageDownloader {
         }
         
         var downloadTask: RetrieveImageDownloadTask?
+        // 对该请求URL，持用进度闭包和完成闭包
         setupProgressBlock(progressBlock, completionHandler: completionHandler, forURL: request.URL!) {(session, fetchLoad) -> Void in
+            // 方法setupProgressBlock(_: _: _: _:)包装好fetchLoad后
+            // 执行该闭包
+            // 如果对于fetcLoad中的URL，还没有设置一个下载，那么创建一个
+            // 如果有，就不需要在设置了，防止同一个URL，启动多个下载
             if fetchLoad.downloadTask == nil {
+                // 创建请求任务
                 let dataTask = session.dataTaskWithRequest(request)
                 
                 fetchLoad.downloadTask = RetrieveImageDownloadTask(internalTask: dataTask, ownerDownloader: self)
                 fetchLoad.options = options
                 
+                // 设置优先级
                 dataTask.priority = options?.downloadPriority ?? NSURLSessionTaskPriorityDefault
+                // 开始请求
                 dataTask.resume()
                 
                 // Hold self while the task is executing.
+                // 在Sessin请求完成回调中，如果self.fetchLoads数组个数为0，sessionHandler.downloadHolder = nil
                 self.sessionHandler.downloadHolder = self
             }
             
@@ -311,16 +347,24 @@ extension ImageDownloader {
     }
     
     // A single key may have multiple callbacks. Only download once.
+    /** 对于一个key，可能有多个回调，但是只下载一次 */
+    /** 包装好ImageFetchLoad */
     internal func setupProgressBlock(progressBlock: ImageDownloaderProgressBlock?, completionHandler: ImageDownloaderCompletionHandler?, forURL URL: NSURL, started: ((NSURLSession, ImageFetchLoad) -> Void)) {
 
+        // 该方法用于对操作设置屏障，确保在执行完任务后才会执行后续操作。常用于确保线程安全性操作。
+        // 一般写操作需要使用屏障来保护
+        // GCD 通过用 dispatch barriers 创建一个读者写者锁 提供了一个优雅的解决方案
         dispatch_barrier_sync(barrierQueue, { () -> Void in
             
+            /// 获取ImageFetchLoad
             let loadObjectForURL = self.fetchLoads[URL] ?? ImageFetchLoad()
             let callbackPair = (progressBlock: progressBlock, completionHander: completionHandler)
-            
+            // 同一个URL，包含多个操作
             loadObjectForURL.callbacks.append(callbackPair)
+            //  写操作
             self.fetchLoads[URL] = loadObjectForURL
             
+            /// 准备工作完成后，开始请求
             if let session = self.session {
                 started(session, loadObjectForURL)
             }
@@ -331,6 +375,7 @@ extension ImageDownloader {
         dispatch_barrier_sync(barrierQueue) { () -> Void in
             if let URL = task.internalTask.originalRequest?.URL, imageFetchLoad = self.fetchLoads[URL] {
                 imageFetchLoad.downloadTaskCount -= 1
+                // 如果请求为0，就真的取消网络请求
                 if imageFetchLoad.downloadTaskCount == 0 {
                     task.internalTask.cancel()
                 }
@@ -351,32 +396,42 @@ extension ImageDownloader {
 // See https://github.com/onevcat/Kingfisher/issues/235
 
 /// Delegate class for `NSURLSessionTaskDelegate`.
+/// 委托代理类NSURLSessionTaskDelegate
+
 /// The session object will hold its delegate until it gets invalidated.
+/// 直到它被无效的会话对象将其持有的委托。
+
 /// If we use `ImageDownloader` as the session delegate, it will not be released.
 /// So we need an additional handler to break the retain cycle.
-class ImageDownloaderSessionHandler: NSObject, NSURLSessionDataDelegate, AuthenticationChallengeResponable {
+/// 如果我们用`图像Downloader`作为会话代表，也不会被释放。
+/// 因此，我们需要一个额外的处理程序，以打破循环引用。
+
+///  请求回调的代理类
+class ImageDownloaderSessionHandler: NSObject, NSURLSessionDataDelegate, AuthenticationChallengeResponable{
     
     // The holder will keep downloader not released while a data task is being executed.
     // It will be set when the task started, and reset when the task finished.
     var downloadHolder: ImageDownloader?
     
     /**
-    This method is exposed since the compiler requests. Do not call it.
-    */
+     This method is exposed since the compiler requests. Do not call it.
+     */
     internal func URLSession(session: NSURLSession, dataTask: NSURLSessionDataTask, didReceiveResponse response: NSURLResponse, completionHandler: (NSURLSessionResponseDisposition) -> Void) {
         
         completionHandler(NSURLSessionResponseDisposition.Allow)
     }
     
     /**
-    This method is exposed since the compiler requests. Do not call it.
-    */
+     This method is exposed since the compiler requests. Do not call it.
+     接受到数据的代理方法
+     */
     internal func URLSession(session: NSURLSession, dataTask: NSURLSessionDataTask, didReceiveData data: NSData) {
-
+        
         guard let downloader = downloadHolder else {
             return
         }
         
+        // 讲数据添加到对应的responseData中
         if let URL = dataTask.originalRequest?.URL, fetchLoad = downloader.fetchLoadForKey(URL) {
             fetchLoad.responseData.appendData(data)
             
@@ -389,8 +444,9 @@ class ImageDownloaderSessionHandler: NSObject, NSURLSessionDataDelegate, Authent
     }
     
     /**
-    This method is exposed since the compiler requests. Do not call it.
-    */
+     This method is exposed since the compiler requests. Do not call it.
+     请求成功或者失败导致请求完成出发的代理方法
+     */
     internal func URLSession(session: NSURLSession, task: NSURLSessionTask, didCompleteWithError error: NSError?) {
         
         if let URL = task.originalRequest?.URL {
@@ -401,12 +457,12 @@ class ImageDownloaderSessionHandler: NSObject, NSURLSessionDataDelegate, Authent
             }
         }
     }
-
+    
     /**
-    This method is exposed since the compiler requests. Do not call it.
-    */
+     This method is exposed since the compiler requests. Do not call it.
+     */
     internal func URLSession(session: NSURLSession, didReceiveChallenge challenge: NSURLAuthenticationChallenge, completionHandler: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Void) {
-
+        
         guard let downloader = downloadHolder else {
             return
         }
@@ -422,37 +478,43 @@ class ImageDownloaderSessionHandler: NSObject, NSURLSessionDataDelegate, Authent
         
         if let callbackPairs = downloader.fetchLoadForKey(imageURL)?.callbacks {
             let options = downloader.fetchLoadForKey(imageURL)?.options ?? KingfisherEmptyOptionsInfo
-            
+            // 请求URL的ImageFetchLoad
             downloader.cleanForURL(imageURL)
-            
+            // 处理该URL的所有回调
             for callbackPair in callbackPairs {
                 dispatch_async_safely_to_queue(options.callbackDispatchQueue, { () -> Void in
+                    // originalData是从服务器中获取的data，还没有转换成image
                     callbackPair.completionHander?(image: image, error: error, imageURL: imageURL, originalData: originalData)
                 })
             }
             
+            /** 如果没有下载了，就释放downloadHolder，打破循环引用 */
             if downloader.fetchLoads.isEmpty {
                 downloadHolder = nil
             }
         }
     }
     
+    /** 下载图片成功 */
     private func processImageForTask(task: NSURLSessionTask, URL: NSURL) {
-
+        
         guard let downloader = downloadHolder else {
             return
         }
         
         // We are on main queue when receiving this.
+        // 开启线程
         dispatch_async(downloader.processQueue, { () -> Void in
-            
+            print(NSThread.currentThread())
             if let fetchLoad = downloader.fetchLoadForKey(URL) {
-                
+                print(NSThread.currentThread())
                 let options = fetchLoad.options ?? KingfisherEmptyOptionsInfo
-                if let image = Image.kf_imageWithData(fetchLoad.responseData, scale: options.scaleFactor, preloadAllGIFData: options.preloadAllGIFData) {
+                // scale表示点与像素比
+                if let image = Image.kf_imageWithData(fetchLoad.responseData, scale: options.scaleFactor) {
                     
                     downloader.delegate?.imageDownloader?(downloader, didDownloadImage: image, forURL: URL, withResponse: task.response!)
                     
+                    // 后台解码
                     if options.backgroundDecode {
                         self.callbackWithImage(image.kf_decodedImage(scale: options.scaleFactor), error: nil, imageURL: URL, originalData: fetchLoad.responseData)
                     } else {

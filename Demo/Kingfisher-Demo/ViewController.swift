@@ -33,13 +33,29 @@ class ViewController: UICollectionViewController {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
         title = "Kingfisher"
+        
+        
+//        let imgV = UIImageView(frame: CGRectMake(100, 100, 100, 100))
+//        self.view.addSubview(imgV)
+//        imgV.kf_setImageWithURL(NSURL(string: "https://raw.githubusercontent.com/onevcat/Kingfisher/master/images/kingfisher-0.jpg")!, placeholderImage: nil, optionsInfo: nil, progressBlock: { (receivedSize, totalSize) in
+//            print("1--->\(receivedSize),\(totalSize)")
+//            }) { (image, error, cacheType, imageURL) in
+//                print(image)
+//        }
+//        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, Int64(1 * NSEC_PER_SEC)), dispatch_get_main_queue()) {
+//        }
+////        imgV.kf_setImageWithURL(NSURL(string: "https://raw.githubusercontent.com/onevcat/Kingfisher/master/images/kingfisher-1.jpg")!, placeholderImage: nil, optionsInfo: nil, progressBlock: { (receivedSize, totalSize) in
+//            print("2--->\(receivedSize),\(totalSize)")
+//        }) { (image, error, cacheType, imageURL) in
+//            print(image)
+//        }
     }
-
+    
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
     }
-
+    
     @IBAction func clearCache(sender: AnyObject) {
         KingfisherManager.sharedManager.cache.clearMemoryCache()
         KingfisherManager.sharedManager.cache.clearDiskCache()
@@ -68,17 +84,20 @@ extension ViewController {
         
         cell.cellImageView.kf_showIndicatorWhenLoading = true
         
-        let URL = NSURL(string: "https://raw.githubusercontent.com/onevcat/Kingfisher/master/images/kingfisher-\(indexPath.row + 1).jpg")!
+        var URL = NSURL(string: "https://raw.githubusercontent.com/onevcat/Kingfisher/master/images/kingfisher-\(indexPath.row + 1).jpg")!
+        if indexPath.row == 0 {
+            URL = NSURL(string: "http://blog.ibireme.com/wp-content/uploads/2015/11/bbb-nodither.gif")!;
+        }
         
         
         cell.cellImageView.kf_setImageWithURL(URL, placeholderImage: nil,
-                                                        optionsInfo: [.Transition(ImageTransition.Fade(1))],
-                                                      progressBlock: { receivedSize, totalSize in
-                                                          print("\(indexPath.row + 1): \(receivedSize)/\(totalSize)")
-                                                      },
-                                                  completionHandler: { image, error, cacheType, imageURL in
-                                                          print("\(indexPath.row + 1): Finished")
-                                                      })
+            optionsInfo: [.Transition(ImageTransition.Fade(1)),.BackgroundDecode],
+            progressBlock: { receivedSize, totalSize in
+                print("\(indexPath.row + 1): \(receivedSize)/\(totalSize)")
+            },
+            completionHandler: { image, error, cacheType, imageURL in
+                print("\(indexPath.row + 1): Finished")
+        })
         return cell
     }
 }

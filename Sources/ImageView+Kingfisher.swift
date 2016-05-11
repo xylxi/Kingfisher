@@ -26,13 +26,13 @@
 
 
 #if os(OSX)
-import AppKit
-typealias ImageView = NSImageView
-public typealias IndicatorView = NSProgressIndicator
+    import AppKit
+    typealias ImageView = NSImageView
+    public typealias IndicatorView = NSProgressIndicator
 #else
-import UIKit
-typealias ImageView = UIImageView
-public typealias IndicatorView = UIActivityIndicatorView
+    import UIKit
+    typealias ImageView = UIImageView
+    public typealias IndicatorView = UIActivityIndicatorView
 #endif
 
 // MARK: - Set Images
@@ -40,7 +40,7 @@ public typealias IndicatorView = UIActivityIndicatorView
 *	Set image to use from web.
 */
 extension ImageView {
-
+    
     /**
      Set an image with a URL, a placeholder image, options, progress handler and completion handler.
      
@@ -57,38 +57,38 @@ extension ImageView {
      */
     
     public func kf_setImageWithURL(URL: NSURL,
-                                   placeholderImage: Image? = nil,
-                                   optionsInfo: KingfisherOptionsInfo? = nil,
-                                   progressBlock: DownloadProgressBlock? = nil,
-                                   completionHandler: CompletionHandler? = nil) -> RetrieveImageTask
+        placeholderImage: Image? = nil,
+        optionsInfo: KingfisherOptionsInfo? = nil,
+        progressBlock: DownloadProgressBlock? = nil,
+        completionHandler: CompletionHandler? = nil) -> RetrieveImageTask
     {
         return kf_setImageWithResource(Resource(downloadURL: URL),
-                                       placeholderImage: placeholderImage,
-                                       optionsInfo: optionsInfo,
-                                       progressBlock: progressBlock,
-                                       completionHandler: completionHandler)
+            placeholderImage: placeholderImage,
+            optionsInfo: optionsInfo,
+            progressBlock: progressBlock,
+            completionHandler: completionHandler)
     }
     
     
     /**
-    Set an image with a URL, a placeholder image, options, progress handler and completion handler.
-    
-    - parameter resource:          Resource object contains information such as `cacheKey` and `downloadURL`.
-    - parameter placeholderImage:  A placeholder image when retrieving the image at URL.
-    - parameter optionsInfo:       A dictionary could control some behaviors. See `KingfisherOptionsInfo` for more.
-    - parameter progressBlock:     Called when the image downloading progress gets updated.
-    - parameter completionHandler: Called when the image retrieved and set.
-    
-    - returns: A task represents the retrieving process.
+     Set an image with a URL, a placeholder image, options, progress handler and completion handler.
      
-    - note: Both the `progressBlock` and `completionHandler` will be invoked in main thread. 
+     - parameter resource:          Resource object contains information such as `cacheKey` and `downloadURL`.
+     - parameter placeholderImage:  A placeholder image when retrieving the image at URL.
+     - parameter optionsInfo:       A dictionary could control some behaviors. See `KingfisherOptionsInfo` for more.
+     - parameter progressBlock:     Called when the image downloading progress gets updated.
+     - parameter completionHandler: Called when the image retrieved and set.
+     
+     - returns: A task represents the retrieving process.
+     
+     - note: Both the `progressBlock` and `completionHandler` will be invoked in main thread.
      The `CallbackDispatchQueue` specified in `optionsInfo` will not be used in callbacks of this method.
-    */
+     */
     public func kf_setImageWithResource(resource: Resource,
-                                placeholderImage: Image? = nil,
-                                     optionsInfo: KingfisherOptionsInfo? = nil,
-                                   progressBlock: DownloadProgressBlock? = nil,
-                               completionHandler: CompletionHandler? = nil) -> RetrieveImageTask
+        placeholderImage: Image? = nil,
+        optionsInfo: KingfisherOptionsInfo? = nil,
+        progressBlock: DownloadProgressBlock? = nil,
+        completionHandler: CompletionHandler? = nil) -> RetrieveImageTask
     {
         let showIndicatorWhenLoading = kf_showIndicatorWhenLoading
         var indicator: IndicatorView? = nil
@@ -102,25 +102,25 @@ extension ImageView {
         
         kf_setWebURL(resource.downloadURL)
         
-        var options = optionsInfo ?? []
-        if shouldPreloadAllGIF() {
-            options.append(.PreloadAllGIFData)
-        }
-
-        let task = KingfisherManager.sharedManager.retrieveImageWithResource(resource, optionsInfo: options,
+        let task = KingfisherManager.sharedManager.retrieveImageWithResource(resource, optionsInfo: optionsInfo,
             progressBlock: { receivedSize, totalSize in
                 if let progressBlock = progressBlock {
                     progressBlock(receivedSize: receivedSize, totalSize: totalSize)
                 }
             },
+            // 无论是检索图像方式如何，检索成功与失败，在结束后，执行该回调
+            // 1. 清除请求UIImageView的任务
+            // 2. 处理UIImageView.setURL的回调
+            // 3.
             completionHandler: {[weak self] image, error, cacheType, imageURL in
                 
                 dispatch_async_safely_to_main_queue {
+                    // 判断task请求完成后task的URL和当前的UIImageView的URL一样
                     guard let sSelf = self where imageURL == sSelf.kf_webURL else {
                         completionHandler?(image: image, error: error, cacheType: cacheType, imageURL: imageURL)
                         return
                     }
-                    
+                    // 清除请求任务
                     sSelf.kf_setImageTask(nil)
                     
                     guard let image = image else {
@@ -140,7 +140,6 @@ extension ImageView {
                                         UIView.transitionWithView(sSelf, duration: transition.duration,
                                             options: [transition.animationOptions, .AllowUserInteraction],
                                             animations: {
-                                                // Set image property in the animation.
                                                 transition.animations?(sSelf, image)
                                             },
                                             completion: { finished in
@@ -160,12 +159,6 @@ extension ImageView {
         kf_setImageTask(task)
         
         return task
-    }
-}
-
-extension ImageView {
-    func shouldPreloadAllGIF() -> Bool {
-        return true
     }
 }
 
@@ -210,25 +203,27 @@ extension ImageView {
             if kf_showIndicatorWhenLoading == newValue {
                 return
             } else {
+                // 如果是true
                 if newValue {
                     
-#if os(OSX)
-                    let indicator = NSProgressIndicator(frame: CGRect(x: 0, y: 0, width: 16, height: 16))
-                    indicator.controlSize = .SmallControlSize
-                    indicator.style = .SpinningStyle
-#else
-    #if os(tvOS)
-                    let indicatorStyle = UIActivityIndicatorViewStyle.White
-    #else
-                    let indicatorStyle = UIActivityIndicatorViewStyle.Gray
-    #endif
-                    let indicator = UIActivityIndicatorView(activityIndicatorStyle:indicatorStyle)
-                    indicator.autoresizingMask = [.FlexibleLeftMargin, .FlexibleRightMargin, .FlexibleBottomMargin, .FlexibleTopMargin]
-#endif
-
+                    #if os(OSX)
+                        let indicator = NSProgressIndicator(frame: CGRect(x: 0, y: 0, width: 16, height: 16))
+                        indicator.controlSize = .SmallControlSize
+                        indicator.style = .SpinningStyle
+                    #else
+                        #if os(tvOS)
+                            let indicatorStyle = UIActivityIndicatorViewStyle.White
+                        #else
+                            let indicatorStyle = UIActivityIndicatorViewStyle.Gray
+                        #endif
+                        // 创建一个菊花View
+                        let indicator = UIActivityIndicatorView(activityIndicatorStyle:indicatorStyle)
+                        indicator.autoresizingMask = [.FlexibleLeftMargin, .FlexibleRightMargin, .FlexibleBottomMargin, .FlexibleTopMargin]
+                    #endif
+                    //?? 为什么CGRectGetMidX(bounds)获得中心的点
                     indicator.kf_center = CGPoint(x: CGRectGetMidX(bounds), y: CGRectGetMidY(bounds))
                     indicator.hidden = true
-
+                    
                     self.addSubview(indicator)
                     
                     kf_setIndicator(indicator)
@@ -255,7 +250,7 @@ extension ImageView {
     private var kf_imageTask: RetrieveImageTask? {
         return objc_getAssociatedObject(self, &imageTaskKey) as? RetrieveImageTask
     }
-    
+    // 持用task，如果释放了task，请求就会结束
     private func kf_setImageTask(task: RetrieveImageTask?) {
         objc_setAssociatedObject(self, &imageTaskKey, task, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
