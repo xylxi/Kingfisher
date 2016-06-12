@@ -109,9 +109,9 @@ extension ImageView {
                 }
             },
             // 无论是检索图像方式如何，检索成功与失败，在结束后，执行该回调
-            // 1. 清除请求UIImageView的任务
-            // 2. 处理UIImageView.setURL的回调
-            // 3.
+            // 1. 判断当前的image的imageURL是否是当前任务的imageURL，如果不是return
+            // 2. 清除请求UIImageView的任务
+            // 3. 显示图片
             completionHandler: {[weak self] image, error, cacheType, imageURL in
                 
                 dispatch_async_safely_to_main_queue {
