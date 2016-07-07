@@ -130,8 +130,12 @@ public class ImageCache {
         })
         
         #if !os(OSX) && !os(watchOS)
+            // 内存警告
             NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(ImageCache.clearMemoryCache), name: UIApplicationDidReceiveMemoryWarningNotification, object: nil)
+            // 清理过期文件
+            // 应用将被kill
             NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(ImageCache.cleanExpiredDiskCache), name: UIApplicationWillTerminateNotification, object: nil)
+            // 输入后台
             NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(ImageCache.backgroundCleanExpiredDiskCache), name: UIApplicationDidEnterBackgroundNotification, object: nil)
         #endif
     }
@@ -398,25 +402,24 @@ extension ImageCache {
     }
     
     /**
-     Clean expired disk cache. This is an async operation.
      清除过期的缓存
-     
      - parameter completionHandler: Called after the operation completes.
      */
     public func cleanExpiredDiskCacheWithCompletionHander(completionHandler: (()->())?) {
         
         // Do things in cocurrent io queue
         dispatch_async(ioQueue, { () -> Void in
-            
+            // 过去文件地址数组,  磁盘缓存的文件总大小, 过期文件的总大小
             var (URLsToDelete, diskCacheSize, cachedFiles) = self.travelCachedFiles(onlyForCacheSize: false)
             
             for fileURL in URLsToDelete {
                 do {
+                    // 删除过期文件
                     try self.fileManager.removeItemAtURL(fileURL)
                 } catch _ {
                 }
             }
-            
+            // 删除完过期文件，再看看剩余的文件是否超过指定大小缓存，如果是，按时间删除文件
             if self.maxDiskCacheSize > 0 && diskCacheSize > self.maxDiskCacheSize {
                 let targetSize = self.maxDiskCacheSize / 2
                 
@@ -466,22 +469,25 @@ extension ImageCache {
             })
         })
     }
-    
+    /**
+     计算
+     */
     private func travelCachedFiles(onlyForCacheSize onlyForCacheSize: Bool) -> (URLsToDelete: [NSURL], diskCacheSize: UInt, cachedFiles: [NSURL: [NSObject: AnyObject]]) {
         
         let diskCacheURL = NSURL(fileURLWithPath: diskCachePath)
         let resourceKeys = [NSURLIsDirectoryKey, NSURLContentModificationDateKey, NSURLTotalFileAllocatedSizeKey]
+        //  在这时间之前的文件都过期
         let expiredDate = NSDate(timeIntervalSinceNow: -self.maxCachePeriodInSecond)
         
         var cachedFiles = [NSURL: [NSObject: AnyObject]]()
         var URLsToDelete = [NSURL]()
         var diskCacheSize: UInt = 0
-        
+        /// 获取缓存目录下的所有文件地址
         if let fileEnumerator = self.fileManager.enumeratorAtURL(diskCacheURL, includingPropertiesForKeys: resourceKeys, options: NSDirectoryEnumerationOptions.SkipsHiddenFiles, errorHandler: nil),
             urls = fileEnumerator.allObjects as? [NSURL] {
                 for fileURL in urls {
-                    
                     do {
+                        // 获取文件的信息
                         let resourceValues = try fileURL.resourceValuesForKeys(resourceKeys)
                         // If it is a Directory. Continue to next file URL.
                         if let isDirectory = resourceValues[NSURLIsDirectoryKey] as? NSNumber {
@@ -494,6 +500,7 @@ extension ImageCache {
                             // If this file is expired, add it to URLsToDelete
                             if let modificationDate = resourceValues[NSURLContentModificationDateKey] as? NSDate {
                                 if modificationDate.laterDate(expiredDate) == expiredDate {
+                                    // 添加过期文件的地址
                                     URLsToDelete.append(fileURL)
                                     continue
                                 }
@@ -501,8 +508,10 @@ extension ImageCache {
                         }
                         
                         if let fileSize = resourceValues[NSURLTotalFileAllocatedSizeKey] as? NSNumber {
+                            // 获取目录下文件的总大小
                             diskCacheSize += fileSize.unsignedLongValue
                             if !onlyForCacheSize {
+                                // 获取过期文件的总大小
                                 cachedFiles[fileURL] = resourceValues
                             }
                         }
